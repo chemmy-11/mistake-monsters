@@ -37,7 +37,9 @@ import com.mistakemonsters.app.logic.WorksheetPdf
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // ===== 同类题练习卷：生成 / 预览 / PDF 导出 / 历史 =====
 
@@ -109,12 +111,14 @@ fun PracticeScreen(app: App, presetQuestionIds: List<Long>?) {
                     showAnswers = false
                     scope.launch {
                         try {
-                            val set = app.pipeline.generateSimilar(
-                                causeId = if (presetQuestionIds.isNullOrEmpty()) causeId else null,
-                                questionIds = presetQuestionIds,
-                                count = count,
-                                ramp = ramp,
-                            )
+                            val set = withContext(Dispatchers.IO) {
+                                app.pipeline.generateSimilar(
+                                    causeId = if (presetQuestionIds.isNullOrEmpty()) causeId else null,
+                                    questionIds = presetQuestionIds,
+                                    count = count,
+                                    ramp = ramp,
+                                )
+                            }
                             current = set
                             loadHistory()
                         } catch (e: Exception) {

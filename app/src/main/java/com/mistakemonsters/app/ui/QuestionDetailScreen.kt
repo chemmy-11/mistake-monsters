@@ -40,7 +40,9 @@ import com.mistakemonsters.app.data.Cause
 import com.mistakemonsters.app.data.Question
 import com.mistakemonsters.app.data.Taxonomy
 import java.io.File
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // ===== 错题详情：题目 / 解析门 / 错因 / 提示链 / AI 小老师 =====
 
@@ -306,7 +308,7 @@ fun QuestionDetailScreen(
                     chatting = true
                     scope.launch {
                         try {
-                            val reply = app.pipeline.guideReply(questionId, history)
+                            val reply = withContext(Dispatchers.IO) { app.pipeline.guideReply(questionId, history) }
                             chat = chat + ("assistant" to reply)
                         } catch (e: Exception) {
                             chat = chat + ("assistant" to ("出了点问题：" + (e.message ?: "未知")))

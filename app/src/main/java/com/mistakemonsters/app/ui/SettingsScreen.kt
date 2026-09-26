@@ -35,7 +35,9 @@ import com.mistakemonsters.app.App
 import com.mistakemonsters.app.data.AiSettings
 import com.mistakemonsters.app.data.Profile
 import com.mistakemonsters.app.data.Taxonomy
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // ===== 设置：学生档案 / AI 服务商 / 关于 =====
 
@@ -180,11 +182,13 @@ fun SettingsScreen(app: App) {
                         msg = null
                         scope.launch {
                             try {
-                                val reply = com.mistakemonsters.app.llm.LlmClient.chat(
-                                    ai,
-                                    listOf(com.mistakemonsters.app.llm.LlmClient.Msg("user", "请只回复两个字：连接")),
-                                    maxTokens = 2000,
-                                )
+                                val reply = withContext(Dispatchers.IO) {
+                                    com.mistakemonsters.app.llm.LlmClient.chat(
+                                        ai,
+                                        listOf(com.mistakemonsters.app.llm.LlmClient.Msg("user", "请只回复两个字：连接")),
+                                        maxTokens = 2000,
+                                    )
+                                }
                                 msg = "连接成功！AI 回复：${reply.trim().take(30)}"
                             } catch (e: Exception) {
                                 msg = "连接失败：${e.message}"

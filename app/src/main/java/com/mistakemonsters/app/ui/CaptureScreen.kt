@@ -9,13 +9,17 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -36,11 +40,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mistakemonsters.app.App
@@ -50,6 +62,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.min
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -61,9 +74,10 @@ fun CaptureScreen(app: App, onDone: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var step by remember { mutableStateOf("upload") } // upload | recognizing | review | analyzing | done
+    var step by remember { mutableStateOf("upload") } // upload | crop | recognizing | review | analyzing | done
     var error by remember { mutableStateOf<String?>(null) }
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var cropRect by remember { mutableStateOf<FloatArray?>(null) } // 待裁剪框（图像像素坐标 [l, t, r, b]）
     var imagePath by remember { mutableStateOf<String?>(null) }
     var drafts by remember { mutableStateOf<List<DraftQuestion>>(emptyList()) }
     var answers by remember { mutableStateOf<Map<Int, String>>(emptyMap()) }
@@ -76,38 +90,18 @@ fun CaptureScreen(app: App, onDone: () -> Unit) {
         if (ok) {
             val uri = pendingPhotoUri
             if (uri != null) scope.launch {
-                handleImage(
-                    app,
-                    { b -> bitmap = b },
-                    { p -> imagePath = p },
-                    uriToBitmap(context, uri),
-                    { _, e -> error = e; step = "upload" },
-                    { s -> step = s },
-                    { d ->
-                        drafts = d
-                        answers = d.mapIndexed { i, dd -> i to dd.myAnswer }.toMap()
-                        step = "review"
-                    },
-                )
+                val bmp = uriToBitmap(context, uri)
+                if (bmp == null) { error = "图片读取失败，换一张试试"; step = "upload" }
+                else { bitmap = bmp; cropRect = defaultCrop(bmp); step = "crop" }
             }
         }
     }
     val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
             scope.launch {
-                handleImage(
-                    app,
-                    { b -> bitmap = b },
-                    { p -> imagePath = p },
-                    uriToBitmap(context, uri),
-                    { _, e -> error = e; step = "upload" },
-                    { s -> step = s },
-                    { d ->
-                        drafts = d
-                        answers = d.mapIndexed { i, dd -> i to dd.myAnswer }.toMap()
-                        step = "review"
-                    },
-                )
+                val bmp = uriToBitmap(context, uri)
+                if (bmp == null) { error = "图片读取失败，换一张试试"; step = "upload" }
+                else { bitmap = bmp; cropRect = defaultCrop(bmp); step = "crop" }
             }
         }
     }
@@ -130,9 +124,11 @@ fun CaptureScreen(app: App, onDone: () -> Unit) {
         // 步骤条
         Text(
             when (step) {
-                "upload", "recognizing" -> "第 1 步 · 拍下你的错题"
-                "review", "analyzing" -> "第 2 步 · 确认题目与我的答案"
-                else -> "第 3 步 · 收录完成"
+                "upload" -> "第 1 步 · 拍下你的错题"
+                "crop" -> "第 2 步 · 裁剪照片"
+                "recognizing" -> "第 2 步 · 裁剪照片"
+                "review", "analyzing" -> "第 3 步 · 确认题目与我的答案"
+                else -> "第 4 步 · 收录完成"
             },
             fontSize = 13.sp, color = C.InkSoft, fontWeight = FontWeight.Bold,
         )
@@ -178,6 +174,69 @@ fun CaptureScreen(app: App, onDone: () -> Unit) {
                 }
             }
 
+            "crop" -> {
+                val bmp = bitmap
+                val rect = cropRect
+                if (bmp != null && rect != null) {
+                    MsCard {
+                        Column(Modifier.fillMaxWidth()) {
+                            Text("✂️ 裁剪照片", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            Text(
+                                "拖动方框框住错题（连同你写的答案），去掉多余背景，识别更准",
+                                color = C.InkSoft, fontSize = 12.sp,
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            CropOverlay(bitmap = bmp, rect = rect, onRectChange = { cropRect = it })
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "裁剪区域：${(rect[2] - rect[0]).toInt()} × ${(rect[3] - rect[1]).toInt()} px    原图：${bmp.width} × ${bmp.height} px",
+                                color = C.InkSoft, fontSize = 11.sp,
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                GhostButton("↺ 重新选择", { step = "upload"; bitmap = null; cropRect = null })
+                                GhostButton("使用原图", {
+                                    scope.launch {
+                                        handleImage(
+                                            app,
+                                            { b -> bitmap = b },
+                                            { p -> imagePath = p },
+                                            bmp,
+                                            { _, e -> error = e; cropRect = defaultCrop(bmp); step = "crop" },
+                                            { s -> step = s },
+                                            { d ->
+                                                drafts = d
+                                                answers = d.mapIndexed { i, dd -> i to dd.myAnswer }.toMap()
+                                                step = "review"
+                                            },
+                                        )
+                                    }
+                                })
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            MsButton("✓ 确认裁剪并识别", {
+                                val cropped = cropBitmap(bmp, rect)
+                                scope.launch {
+                                    handleImage(
+                                        app,
+                                        { b -> bitmap = b },
+                                        { p -> imagePath = p },
+                                        cropped,
+                                        { _, e -> error = e; cropRect = defaultCrop(cropped); step = "crop" },
+                                        { s -> step = s },
+                                        { d ->
+                                            drafts = d
+                                            answers = d.mapIndexed { i, dd -> i to dd.myAnswer }.toMap()
+                                            step = "review"
+                                        },
+                                    )
+                                }
+                            }, modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                }
+            }
+
             "review" -> {
                 Text("AI 识别到 ${drafts.size} 道题，请确认", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Text("勾选要收录的错题，并填写/修改「我当时写的答案」——这是 AI 判断错因的关键。", color = C.InkSoft, fontSize = 13.sp)
@@ -216,7 +275,7 @@ fun CaptureScreen(app: App, onDone: () -> Unit) {
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     GhostButton("← 重拍", {
-                        step = "upload"; drafts = emptyList(); bitmap = null
+                        step = "upload"; drafts = emptyList(); bitmap = null; cropRect = null
                     })
                     MsButton("🧠 AI 分析错因并收录（${drafts.count { it.selected }} 道）", {
                         val chosen = drafts.withIndex().filter { it.value.selected }
@@ -227,15 +286,17 @@ fun CaptureScreen(app: App, onDone: () -> Unit) {
                             createdCount = 0
                             for ((i, d) in chosen) {
                                 try {
-                                    app.pipeline.analyzeAndCreate(
-                                        questionText = d.questionText,
-                                        myAnswer = answers[i] ?: "",
-                                        category = d.category,
-                                        subtype = d.subtype,
-                                        knowledgeTags = d.knowledgeTags,
-                                        note = d.note.ifBlank { null },
-                                        imagePath = imagePath,
-                                    )
+                                    withContext(Dispatchers.IO) {
+                                        app.pipeline.analyzeAndCreate(
+                                            questionText = d.questionText,
+                                            myAnswer = answers[i] ?: "",
+                                            category = d.category,
+                                            subtype = d.subtype,
+                                            knowledgeTags = d.knowledgeTags,
+                                            note = d.note.ifBlank { null },
+                                            imagePath = imagePath,
+                                        )
+                                    }
                                     createdCount++
                                 } catch (e: Exception) {
                                     error = e.message ?: "分析失败"
@@ -317,7 +378,7 @@ private suspend fun handleImage(
             f.name
         }
         setImagePath(savedPath)
-        val drafts = app.pipeline.recognizeDraft(dataUrl)
+        val drafts = withContext(Dispatchers.IO) { app.pipeline.recognizeDraft(dataUrl) }
         if (drafts.isEmpty()) {
             onError("upload", "AI 没有识别出题目，试试把题拍得更清楚、光线更亮一些")
         } else {
@@ -338,4 +399,148 @@ private fun compressToDataUrl(src: Bitmap): String {
     bmp.compress(Bitmap.CompressFormat.JPEG, 85, bos)
     val b64 = Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP)
     return "data:image/jpeg;base64,$b64"
+}
+
+// ---------- 裁剪步骤：图像像素坐标裁剪框，拖动移动 / 四角缩放 ----------
+
+private const val MIN_CROP_PX = 60f // 最小裁剪边长（图像像素）
+
+private fun defaultCrop(bmp: Bitmap): FloatArray {
+    val mx = bmp.width * 0.05f
+    val my = bmp.height * 0.05f
+    return floatArrayOf(mx, my, bmp.width - mx, bmp.height - my)
+}
+
+private fun cropBitmap(bmp: Bitmap, r: FloatArray): Bitmap {
+    val l = r[0].toInt().coerceIn(0, bmp.width - 2)
+    val t = r[1].toInt().coerceIn(0, bmp.height - 2)
+    val rr = r[2].toInt().coerceIn(l + 1, bmp.width)
+    val bb = r[3].toInt().coerceIn(t + 1, bmp.height)
+    return Bitmap.createBitmap(bmp, l, t, rr - l, bb - t)
+}
+
+@Composable
+private fun CropOverlay(bitmap: Bitmap, rect: FloatArray, onRectChange: (FloatArray) -> Unit) {
+    val density = LocalDensity.current
+    val rectState = androidx.compose.runtime.rememberUpdatedState(rect)
+    var viewSize by remember { mutableStateOf(IntSize.Zero) }
+
+    // 图像在容器内 ContentScale.Fit 的显示参数（居中留边）
+    val scale = if (viewSize.width > 0 && viewSize.height > 0)
+        min(viewSize.width.toFloat() / bitmap.width, viewSize.height.toFloat() / bitmap.height) else 1f
+    val dispW = bitmap.width * scale
+    val dispH = bitmap.height * scale
+    val offX = (viewSize.width - dispW) / 2f
+    val offY = (viewSize.height - dispH) / 2f
+    val boxW = with(density) { ((rect[2] - rect[0]) * scale).toDp() }
+    val boxH = with(density) { ((rect[3] - rect[1]) * scale).toDp() }
+    val handle = 28.dp
+    val handleOffset = (-14).dp
+
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(340.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color(0xFF33303B))
+            .onSizeChanged { viewSize = it },
+    ) {
+        Image(bitmap.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+
+        if (viewSize.width > 0 && viewSize.height > 0) {
+            // 裁剪框外暗角
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .drawBehind {
+                        val dim = Color(0x9933303B)
+                        val l = offX + rectState.value[0] * scale
+                        val t = offY + rectState.value[1] * scale
+                        val rr = offX + rectState.value[2] * scale
+                        val bb = offY + rectState.value[3] * scale
+                        drawRect(dim, Offset(0f, 0f), Size(size.width, t.coerceAtLeast(0f)))
+                        drawRect(dim, Offset(0f, bb), Size(size.width, (size.height - bb).coerceAtLeast(0f)))
+                        drawRect(dim, Offset(0f, t), Size(l.coerceAtLeast(0f), bb - t))
+                        drawRect(dim, Offset(rr, t), Size((size.width - rr).coerceAtLeast(0f), bb - t))
+                    },
+            )
+            // 裁剪框：整体拖动
+            Box(
+                Modifier
+                    .offset { IntOffset((offX + rectState.value[0] * scale).toInt(), (offY + rectState.value[1] * scale).toInt()) }
+                    .size(boxW, boxH)
+                    .border(2.dp, C.Primary)
+                    .pointerInput(bitmap, scale) {
+                        detectDragGestures { _, drag ->
+                            val r = rectState.value
+                            val w = r[2] - r[0]
+                            val h = r[3] - r[1]
+                            val nl = (r[0] + drag.x / scale).coerceIn(0f, bitmap.width - w)
+                            val nt = (r[1] + drag.y / scale).coerceIn(0f, bitmap.height - h)
+                            onRectChange(floatArrayOf(nl, nt, nl + w, nt + h))
+                        }
+                    },
+            ) {
+                // 三分构图线
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .drawBehind {
+                            val line = Color.White.copy(alpha = 0.4f)
+                            drawLine(line, Offset(size.width / 3, 0f), Offset(size.width / 3, size.height), 1f)
+                            drawLine(line, Offset(size.width * 2 / 3, 0f), Offset(size.width * 2 / 3, size.height), 1f)
+                            drawLine(line, Offset(0f, size.height / 3), Offset(size.width, size.height / 3), 1f)
+                            drawLine(line, Offset(0f, size.height * 2 / 3), Offset(size.width, size.height * 2 / 3), 1f)
+                        },
+                )
+                // 四角缩放手柄（子节点优先获得手势）
+                listOf("nw", "ne", "sw", "se").forEach { corner ->
+                    val align = when (corner) {
+                        "nw" -> Alignment.TopStart
+                        "ne" -> Alignment.TopEnd
+                        "sw" -> Alignment.BottomStart
+                        else -> Alignment.BottomEnd
+                    }
+                    Box(
+                        Modifier
+                            .align(align)
+                            .offset(handleOffset, handleOffset)
+                            .size(handle)
+                            .background(Color.White, RoundedCornerShape(4.dp))
+                            .border(3.dp, C.Primary, RoundedCornerShape(4.dp))
+                            .pointerInput(bitmap, scale, corner) {
+                                detectDragGestures { _, drag ->
+                                    val r = rectState.value
+                                    val dx = drag.x / scale
+                                    val dy = drag.y / scale
+                                    val out = when (corner) {
+                                        "nw" -> floatArrayOf(
+                                            (r[0] + dx).coerceIn(0f, r[2] - MIN_CROP_PX),
+                                            (r[1] + dy).coerceIn(0f, r[3] - MIN_CROP_PX),
+                                            r[2], r[3],
+                                        )
+                                        "ne" -> floatArrayOf(
+                                            r[0], r[1],
+                                            (r[2] + dx).coerceIn(r[0] + MIN_CROP_PX, bitmap.width.toFloat()),
+                                            r[3],
+                                        )
+                                        "sw" -> floatArrayOf(
+                                            (r[0] + dx).coerceIn(0f, r[2] - MIN_CROP_PX),
+                                            r[1], r[2],
+                                            (r[3] + dy).coerceIn(r[1] + MIN_CROP_PX, bitmap.height.toFloat()),
+                                        )
+                                        else -> floatArrayOf(
+                                            r[0], r[1],
+                                            (r[2] + dx).coerceIn(r[0] + MIN_CROP_PX, bitmap.width.toFloat()),
+                                            (r[3] + dy).coerceIn(r[1] + MIN_CROP_PX, bitmap.height.toFloat()),
+                                        )
+                                    }
+                                    onRectChange(out)
+                                }
+                            },
+                    )
+                }
+            }
+        }
+    }
 }

@@ -32,7 +32,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mistakemonsters.app.App
 import com.mistakemonsters.app.data.ReportData
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // ===== 错因画像 · 长期记忆 =====
 
@@ -63,7 +65,7 @@ fun ReportScreen(app: App, onPracticeForCause: (Long) -> Unit) {
                         regenerating = true
                         scope.launch {
                             try {
-                                app.pipeline.regenDigest()
+                                withContext(Dispatchers.IO) { app.pipeline.regenDigest() }
                                 load()
                             } catch (e: Exception) {
                                 error = e.message ?: "刷新失败"
