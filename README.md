@@ -56,11 +56,22 @@ app/build/outputs/apk/debug/app-debug.apk
 
 ```
 app/src/main/java/com/mistakemonsters/app/
-  App.kt            # 单例容器（db / prefs / pipeline）
+  App.kt            # 单例容器（db / prefs / pipeline / updater）
   MainActivity.kt   # 单 Activity + 底部导航 + 手写路由
   data/             # Models / Taxonomy(题型+错因库) / Db(SQLite) / Prefs
   llm/              # LlmClient(OkHttp+JSON容错+演示模式) / Prompts(全部提示词)
   logic/            # Pipeline(识别→归因→记忆→出题→画像) / WorksheetPdf(端上PDF)
-  ui/               # 七个页面 + 主题/公共组件
-test/               # ui.py 按文字点按的 UI 自动化小工具
+  ui/               # 七个页面 + 主题/公共组件 + UpdateDialog
+  update/           # 在线更新：检查(api.github.com) / 下载(镜像回退) / 安装引导
+test/               # ui.py 按文字点按的 UI 自动化小工具；gh-release.mjs 发版脚本
+```
+
+## 📦 发新版本
+
+```bash
+# 1. 升版本：app/build.gradle.kts 里的 versionCode / versionName
+# 2. 构建签名包
+gradle :app:assembleRelease        # 产物 app/build/outputs/apk/release/app-release.apk
+# 3. 创建 GitHub Release 并上传 APK（老用户启动 App 即收到更新提示）
+node test/gh-release.mjs vX.Y.Z <apk路径> <notes.md路径> MistakeMonsters-vX.Y.Z.apk
 ```
