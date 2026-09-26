@@ -91,9 +91,20 @@ object LlmClient {
                 val detail = try { JSONObject(text).optJSONObject("error")?.optString("message") } catch (e: Exception) { text.take(200) }
                 throw LlmException("AI 服务返回错误 ${r.code}：${detail ?: "未知错误"}")
             }
-            val content = JSONObject(text)
-                .optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content")
-            if (content.isNullOrBlank()) throw LlmException("AI 返回了空内容")
+            val choice = JSONObject(text).optJSONArray("choices")?.optJSONObject(0)
+            val content = choice?.optJSONObject("message")?.optString("content")
+            // 推理模型（如 deepseek-flash）的思维链与答案共享 max_tokens：
+            // 预算不足时答案会被截断甚至为空，直接给出可操作的提示，避免无效重试
+            if (choice?.optString("finish_reason") == "length") {
+                val usedReasoning = !choice.optJSONObject("message")?.optString("reasoning_content").isNullOrBlank()
+                throw LlmException(
+                    if (usedReasoning)
+                        "AI 的推理过程占满了输出上限，答案被截断（推理模型如 deepseek-flash 的思维链与答案共享输出预算）。请到「设置」换成非推理模型（如 deepseek-chat）后重试"
+                    else
+                        "AI 输出超出长度上限被截断，请缩短题目内容或到「设置」更换模型"
+                )
+            }
+            if (content.isNullOrBlank()) throw LlmException("AI 返回了空内容，请重试或更换模型")
             return content
         }
         throw LlmException("AI 调用失败")

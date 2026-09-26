@@ -33,8 +33,10 @@ object Prompts {
         note: String?,
         digest: String,
         causes: List<CauseLite>,
+        suspectedCause: String? = null,
     ): String {
         val causeList = causes.joinToString("\n") { "- id=${it.id} 【${it.category}】${it.name}：${it.description}" }
+        val suspected = suspectedCause?.trim()?.take(60)
         return SYSTEM_BASE + """
 
 【学生画像】（用于个性化判断，可能为空）
@@ -46,13 +48,14 @@ $causeList
 【待分析错题】
 题目：$questionText
 学生的答案：${myAnswer.ifBlank { "（空白 / 未作答）" }}
+${suspected?.let { "学生自己认为的错因：$it（学生自评，仅供参考；你仍须独立核对题目与学生答案后作出最终判断，不要盲从）" } ?: ""}
 ${note?.let { "照片备注：$it" } ?: ""}
 
 请完成错题归档分析：
 1. correct_answer：求出正确答案（简洁，含单位）。
 2. analysis：用 2-4 步写出解题思路，面向小学生，每步一句话，讲清"这一步求什么"。
 3. 错因判断：
-   - 若学生答案与正确答案不一致：从错因库中选最匹配的一条（cause_id 填它的 id）；确实都不匹配才给 new_cause（name 不要与库里重复，category 只能是：知识性/习惯性/审题性/心理性）。
+   - 若学生答案与正确答案不一致：从错因库中选最匹配的一条（cause_id 填它的 id）；确实都不匹配才给 new_cause（name 不要与库里重复，category 只能是：知识性/习惯性/审题性/心理性）。学生自评的错因可作线索，但与事实不符时以你的判断为准。
    - 若学生答案正确或无法判断错因：cause_id 填 null，new_cause 填 null，cause_note 简述原因。
 4. knowledge_tags：2-4 个具体知识点标签；difficulty：1-5（1 最易）；category/subtype 校验或修正题型分类。
 5. hint_chain：恰好 3 个递进提示（给"小老师"用）：提示1 指向关键条件 → 提示2 指明方法方向 → 提示3 引导接近答案但绝不给出答案或最终算式结果。

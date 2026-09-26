@@ -33,7 +33,7 @@ class Pipeline(private val db: Db, private val prefs: Prefs) {
                 LlmClient.Msg("system", Prompts.EXTRACT_PROMPT),
                 LlmClient.Msg("user", "请识别这张照片中的数学题，按系统提示输出 JSON。", dataUrl),
             ),
-            maxTokens = 2000,
+            maxTokens = 4000,
         )
         val list = out.optJSONArray("questions") ?: JSONArray()
         (0 until list.length()).mapNotNull { i ->
@@ -62,6 +62,7 @@ class Pipeline(private val db: Db, private val prefs: Prefs) {
         knowledgeTags: List<String>,
         note: String?,
         imagePath: String?,
+        suspectedCause: String? = null,
     ): Question = withContext(Dispatchers.IO) {
         val p = profile()
         val causes = db.listCauses()
@@ -73,10 +74,11 @@ class Pipeline(private val db: Db, private val prefs: Prefs) {
                     Prompts.analyze(
                         questionText, myAnswer, note, p.memoDigest,
                         causes.map { Prompts.CauseLite(it.id, it.name, it.category, it.description) },
+                        suspectedCause,
                     ),
                 )
             ),
-            maxTokens = 2000,
+            maxTokens = 6000,
         )
 
         // ---- 错因 upsert ----
@@ -164,7 +166,7 @@ class Pipeline(private val db: Db, private val prefs: Prefs) {
                     ),
                 )
             ),
-            maxTokens = 800,
+            maxTokens = 3000,
         )
         val digest = text.trim().take(1200)
         prefs.saveProfile(p.copy(memoDigest = digest, digestUpdatedAt = nowStr()))
@@ -203,7 +205,7 @@ class Pipeline(private val db: Db, private val prefs: Prefs) {
                         ),
                     )
                 ),
-                maxTokens = 3500,
+                maxTokens = 6000,
             )
 
             val arr = out.optJSONArray("items") ?: JSONArray()
@@ -228,7 +230,7 @@ class Pipeline(private val db: Db, private val prefs: Prefs) {
                     val checked = LlmClient.chatJson(
                         ai(),
                         listOf(LlmClient.Msg("user", Prompts.verify(items))),
-                        maxTokens = 3500,
+                        maxTokens = 6000,
                     )
                     val cArr = checked.optJSONArray("items")
                     if (cArr != null && cArr.length() == items.size) {
@@ -270,7 +272,7 @@ class Pipeline(private val db: Db, private val prefs: Prefs) {
                 )
             )
             history.takeLast(10).forEach { msgs.add(LlmClient.Msg(it.first, it.second)) }
-            LlmClient.chat(ai(), msgs, maxTokens = 300).trim()
+            LlmClient.chat(ai(), msgs, maxTokens = 2000).trim()
         }
 
     // ---------- 7. 报告 ----------

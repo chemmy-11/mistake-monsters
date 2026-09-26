@@ -66,6 +66,7 @@ import kotlin.math.min
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 // ===== 收录错题向导：拍照 → 识别确认 → AI 归因入库 =====
 
@@ -81,6 +82,7 @@ fun CaptureScreen(app: App, onDone: () -> Unit) {
     var imagePath by remember { mutableStateOf<String?>(null) }
     var drafts by remember { mutableStateOf<List<DraftQuestion>>(emptyList()) }
     var answers by remember { mutableStateOf<Map<Int, String>>(emptyMap()) }
+    var suspectedCauses by remember { mutableStateOf<Map<Int, String>>(emptyMap()) }
     var progress by remember { mutableStateOf(0 to 0) }
     var createdCount by remember { mutableStateOf(0) }
     var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
@@ -206,7 +208,7 @@ fun CaptureScreen(app: App, onDone: () -> Unit) {
                                             { s -> step = s },
                                             { d ->
                                                 drafts = d
-                                                answers = d.mapIndexed { i, dd -> i to dd.myAnswer }.toMap()
+                                                answers = d.mapIndexed { i, dd -> i to dd.myAnswer }.toMap(); suspectedCauses = emptyMap()
                                                 step = "review"
                                             },
                                         )
@@ -226,7 +228,7 @@ fun CaptureScreen(app: App, onDone: () -> Unit) {
                                         { s -> step = s },
                                         { d ->
                                             drafts = d
-                                            answers = d.mapIndexed { i, dd -> i to dd.myAnswer }.toMap()
+                                            answers = d.mapIndexed { i, dd -> i to dd.myAnswer }.toMap(); suspectedCauses = emptyMap()
                                             step = "review"
                                         },
                                     )
@@ -265,6 +267,16 @@ fun CaptureScreen(app: App, onDone: () -> Unit) {
                                     modifier = Modifier.fillMaxWidth(),
                                     colors = fieldColors(),
                                 )
+                                Spacer(Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = suspectedCauses[i] ?: "",
+                                    onValueChange = { t -> suspectedCauses = suspectedCauses + (i to t) },
+                                    label = { Text("我认为的错因（可不填）") },
+                                    placeholder = { Text("如：粗心算错 / 没看清单位 / 概念不懂") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = fieldColors(),
+                                )
                                 if (d.note.isNotBlank()) {
                                     Spacer(Modifier.height(4.dp))
                                     Text("📷 ${d.note}", color = C.InkSoft, fontSize = 11.sp)
@@ -276,6 +288,7 @@ fun CaptureScreen(app: App, onDone: () -> Unit) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     GhostButton("← 重拍", {
                         step = "upload"; drafts = emptyList(); bitmap = null; cropRect = null
+                        answers = emptyMap(); suspectedCauses = emptyMap()
                     })
                     MsButton("🧠 AI 分析错因并收录（${drafts.count { it.selected }} 道）", {
                         val chosen = drafts.withIndex().filter { it.value.selected }
@@ -284,23 +297,32 @@ fun CaptureScreen(app: App, onDone: () -> Unit) {
                             step = "analyzing"
                             progress = 0 to chosen.size
                             createdCount = 0
+                            error = null
                             for ((i, d) in chosen) {
-                                try {
-                                    withContext(Dispatchers.IO) {
-                                        app.pipeline.analyzeAndCreate(
-                                            questionText = d.questionText,
-                                            myAnswer = answers[i] ?: "",
-                                            category = d.category,
-                                            subtype = d.subtype,
-                                            knowledgeTags = d.knowledgeTags,
-                                            note = d.note.ifBlank { null },
-                                            imagePath = imagePath,
-                                        )
+                                // 单题 150s 超时保护：AI 无响应时必然回到可操作状态，不会卡在分析中
+                                val q = try {
+                                    withTimeoutOrNull(150_000) {
+                                        withContext(Dispatchers.IO) {
+                                            app.pipeline.analyzeAndCreate(
+                                                questionText = d.questionText,
+                                                myAnswer = answers[i] ?: "",
+                                                category = d.category,
+                                                subtype = d.subtype,
+                                                knowledgeTags = d.knowledgeTags,
+                                                note = d.note.ifBlank { null },
+                                                imagePath = imagePath,
+                                                suspectedCause = suspectedCauses[i]?.takeIf { it.isNotBlank() },
+                                            )
+                                        }
                                     }
-                                    createdCount++
-                                } catch (e: Exception) {
+                                } catch (e: Throwable) {
                                     error = e.message ?: "分析失败"
+                                    null
                                 }
+                                if (q == null && error == null) {
+                                    error = "第 ${i + 1} 题分析超时（AI 超过 150 秒未响应）。可重试，或到设置更换服务商/模型"
+                                }
+                                if (q != null) createdCount++
                                 progress = (progress.first + 1) to progress.second
                             }
                             if (createdCount > 0) step = "done" else step = "review"
@@ -316,6 +338,8 @@ fun CaptureScreen(app: App, onDone: () -> Unit) {
                         CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp, color = C.Primary)
                         Spacer(Modifier.height(10.dp))
                         Text("AI 正在分析错因、生成辅导提示…（${progress.first}/${progress.second}）", color = C.InkSoft, fontSize = 13.sp)
+                        Spacer(Modifier.height(4.dp))
+                        Text("深度分析大约需要 10-60 秒，请稍候，勿离开此页", color = C.InkSoft, fontSize = 11.sp)
                     }
                 }
             }
@@ -331,6 +355,7 @@ fun CaptureScreen(app: App, onDone: () -> Unit) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         GhostButton("📸 再收录一道", {
                             step = "upload"; bitmap = null; drafts = emptyList(); createdCount = 0; error = null
+                            answers = emptyMap(); suspectedCauses = emptyMap()
                         })
                         MsButton("📒 去错题本", { onDone() })
                     }
