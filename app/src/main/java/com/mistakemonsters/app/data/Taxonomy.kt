@@ -44,7 +44,7 @@ object Taxonomy {
     val AI_PRESETS = listOf(
         AiPreset("zhipu", "智谱 GLM（多模态）", "https://open.bigmodel.cn/api/paas/v4", "glm-4v-flash", "glm-4-flash"),
         AiPreset("dashscope", "阿里云百炼（Qwen）", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-vl-max", "qwen-plus"),
-        AiPreset("deepseek", "DeepSeek（纯文本）", "https://api.deepseek.com/v1", "", "deepseek-chat"),
+        AiPreset("deepseek", "DeepSeek", "https://api.deepseek.com/v1", "deepseek-flash", "deepseek-flash"),
         AiPreset("openai", "OpenAI", "https://api.openai.com/v1", "gpt-4o-mini", "gpt-4o-mini"),
         AiPreset("siliconflow", "硅基流动 SiliconFlow", "https://api.siliconflow.cn/v1", "Qwen/Qwen2.5-VL-7B-Instruct", "deepseek-ai/DeepSeek-V3"),
         AiPreset("moonshot", "月之暗面 Kimi", "https://api.moonshot.cn/v1", "moonshot-v1-8k-vision-preview", "moonshot-v1-8k"),

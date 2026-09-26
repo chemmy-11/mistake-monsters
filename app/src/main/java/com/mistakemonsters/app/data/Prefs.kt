@@ -20,7 +20,7 @@ class Prefs private constructor(context: Context) {
         return try {
             val o = JSONObject(raw)
             AiSettings(
-                presetId = o.optString("presetId", "zhipu"),
+                presetId = o.optString("presetId", "deepseek"),
                 baseUrl = o.optString("baseUrl"),
                 apiKey = o.optString("apiKey"),
                 visionModel = o.optString("visionModel"),

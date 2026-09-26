@@ -70,11 +70,11 @@ data class DraftQuestion(
 )
 
 data class AiSettings(
-    val presetId: String = "zhipu",
-    val baseUrl: String = "https://open.bigmodel.cn/api/paas/v4",
+    val presetId: String = "deepseek",
+    val baseUrl: String = "https://api.deepseek.com/v1",
     val apiKey: String = "",
-    val visionModel: String = "glm-4v-flash",
-    val textModel: String = "glm-4-flash",
+    val visionModel: String = "deepseek-flash",
+    val textModel: String = "deepseek-flash",
     val mock: Boolean = false,
 )
 
