@@ -128,7 +128,12 @@ fun SettingsScreen(app: App) {
                     onSelect = { i ->
                         if (i != null) {
                             val p = Taxonomy.AI_PRESETS[i]
-                            ai = AiSettings(p.id, p.baseUrl, ai.apiKey, p.visionModel, p.textModel, ai.mock)
+                            ai = ai.copy(
+                                presetId = p.id,
+                                baseUrl = p.baseUrl,
+                                visionModel = p.visionModel,
+                                textModel = p.textModel,
+                            )
                             saveAi(ai)
                         }
                     },
@@ -171,6 +176,26 @@ fun SettingsScreen(app: App) {
                         colors = colorsLite(),
                     )
                 }
+                Spacer(Modifier.height(8.dp))
+                Labeled("思考深度（推理模型的 reasoning_effort）") {
+                    DropdownPicker(
+                        label = (Taxonomy.THINKING_DEPTHS.find { it.id == ai.thinkingDepth }?.name ?: "高（推理更充分，推荐）"),
+                        options = Taxonomy.THINKING_DEPTHS.map { it.name },
+                        selectedIndex = Taxonomy.THINKING_DEPTHS.indexOfFirst { it.id == ai.thinkingDepth }.takeIf { it >= 0 },
+                        onSelect = { i ->
+                            if (i != null) {
+                                ai = ai.copy(thinkingDepth = Taxonomy.THINKING_DEPTHS[i].id)
+                                saveAi(ai)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "档位越高思维链越长、越不容易算错，但更慢。非推理模型会忽略；服务商不支持时自动去掉后重试。输出预算已放宽到服务商上限（DeepSeek 为 393216 tokens，按实际用量计费）。",
+                    color = C.InkSoft, fontSize = 11.sp, lineHeight = 16.sp,
+                )
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     MsButton("保存 AI 配置", { saveAi(ai.copy(apiKey = apiKeyInput.ifBlank { ai.apiKey })) })
@@ -186,7 +211,7 @@ fun SettingsScreen(app: App) {
                                     com.mistakemonsters.app.llm.LlmClient.chat(
                                         ai,
                                         listOf(com.mistakemonsters.app.llm.LlmClient.Msg("user", "请只回复两个字：连接")),
-                                        maxTokens = 2000,
+                                        maxTokens = com.mistakemonsters.app.llm.LlmClient.MAX_OUTPUT_TOKENS,
                                     )
                                 }
                                 msg = "连接成功！AI 回复：${reply.trim().take(30)}"

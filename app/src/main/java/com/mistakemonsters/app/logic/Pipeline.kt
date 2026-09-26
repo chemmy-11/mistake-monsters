@@ -33,7 +33,7 @@ class Pipeline(private val db: Db, private val prefs: Prefs) {
                 LlmClient.Msg("system", Prompts.EXTRACT_PROMPT),
                 LlmClient.Msg("user", "请识别这张照片中的数学题，按系统提示输出 JSON。", dataUrl),
             ),
-            maxTokens = 4000,
+            maxTokens = LlmClient.MAX_OUTPUT_TOKENS,
         )
         val list = out.optJSONArray("questions") ?: JSONArray()
         (0 until list.length()).mapNotNull { i ->
@@ -78,7 +78,7 @@ class Pipeline(private val db: Db, private val prefs: Prefs) {
                     ),
                 )
             ),
-            maxTokens = 6000,
+            maxTokens = LlmClient.MAX_OUTPUT_TOKENS,
         )
 
         // ---- 错因 upsert ----
@@ -166,7 +166,7 @@ class Pipeline(private val db: Db, private val prefs: Prefs) {
                     ),
                 )
             ),
-            maxTokens = 3000,
+            maxTokens = LlmClient.MAX_OUTPUT_TOKENS,
         )
         val digest = text.trim().take(1200)
         prefs.saveProfile(p.copy(memoDigest = digest, digestUpdatedAt = nowStr()))
@@ -205,7 +205,7 @@ class Pipeline(private val db: Db, private val prefs: Prefs) {
                         ),
                     )
                 ),
-                maxTokens = 6000,
+                maxTokens = LlmClient.MAX_OUTPUT_TOKENS,
             )
 
             val arr = out.optJSONArray("items") ?: JSONArray()
@@ -230,7 +230,7 @@ class Pipeline(private val db: Db, private val prefs: Prefs) {
                     val checked = LlmClient.chatJson(
                         ai(),
                         listOf(LlmClient.Msg("user", Prompts.verify(items))),
-                        maxTokens = 6000,
+                        maxTokens = LlmClient.MAX_OUTPUT_TOKENS,
                     )
                     val cArr = checked.optJSONArray("items")
                     if (cArr != null && cArr.length() == items.size) {
@@ -272,7 +272,7 @@ class Pipeline(private val db: Db, private val prefs: Prefs) {
                 )
             )
             history.takeLast(10).forEach { msgs.add(LlmClient.Msg(it.first, it.second)) }
-            LlmClient.chat(ai(), msgs, maxTokens = 2000).trim()
+            LlmClient.chat(ai(), msgs, maxTokens = LlmClient.MAX_OUTPUT_TOKENS).trim()
         }
 
     // ---------- 7. 报告 ----------

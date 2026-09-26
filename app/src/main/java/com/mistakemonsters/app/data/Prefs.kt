@@ -25,6 +25,7 @@ class Prefs private constructor(context: Context) {
                 apiKey = o.optString("apiKey"),
                 visionModel = o.optString("visionModel"),
                 textModel = o.optString("textModel"),
+                thinkingDepth = o.optString("thinkingDepth", "high"),
                 mock = o.optBoolean("mock", false),
             )
         } catch (e: Exception) {
@@ -35,7 +36,8 @@ class Prefs private constructor(context: Context) {
     fun saveAiSettings(s: AiSettings) {
         sp.edit().putString("ai", JSONObject().apply {
             put("presetId", s.presetId); put("baseUrl", s.baseUrl); put("apiKey", s.apiKey)
-            put("visionModel", s.visionModel); put("textModel", s.textModel); put("mock", s.mock)
+            put("visionModel", s.visionModel); put("textModel", s.textModel)
+            put("thinkingDepth", s.thinkingDepth); put("mock", s.mock)
         }.toString()).apply()
     }
 

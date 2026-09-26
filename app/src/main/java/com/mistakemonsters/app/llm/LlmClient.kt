@@ -15,6 +15,12 @@ import java.util.concurrent.TimeUnit
 class LlmException(message: String) : Exception(message)
 
 object LlmClient {
+    // 输出预算：DeepSeek 允许的最大值（max_tokens 只是上限，按实际生成量计费）。
+    // 推理模型（如 deepseek-flash）的思维链与答案共享该预算，预算过小会把答案截断成空。
+    const val MAX_OUTPUT_TOKENS = 393_216
+    // 部分服务商（如 OpenAI gpt-4o 系）max_tokens 上限远低于此，被拒时降级重试用
+    private const val FALLBACK_OUTPUT_TOKENS = 8_192
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(240, TimeUnit.SECONDS)
@@ -41,7 +47,7 @@ object LlmClient {
         }
     }
 
-    fun chat(settings: AiSettings, messages: List<Msg>, maxTokens: Int = 2000, forceJson: Boolean = false): String {
+    fun chat(settings: AiSettings, messages: List<Msg>, maxTokens: Int = MAX_OUTPUT_TOKENS, forceJson: Boolean = false): String {
         if (isMock(settings)) return Mock.reply(messages)
 
         val base = normalizeBaseUrl(settings.baseUrl)
@@ -67,23 +73,47 @@ object LlmClient {
             }
             arr.put(o)
         }
-        val body = JSONObject()
-            .put("model", model)
-            .put("messages", arr)
-            .put("temperature", 0.3)
-            .put("stream", false)
-            .put("max_tokens", maxTokens)
-        if (forceJson) body.put("response_format", JSONObject().put("type", "json_object"))
 
-        val req = Request.Builder()
-            .url("$base/chat/completions")
-            .header("Authorization", "Bearer ${settings.apiKey}")
-            .post(body.toString().toRequestBody("application/json".toMediaType()))
-            .build()
-        val resp = try {
-            client.newCall(req).execute()
-        } catch (e: Exception) {
-            throw LlmException("无法连接 AI 服务（$base）：${e.message ?: e}")
+        // useAdvanced=false 时去掉思考深度并把预算降到保守值（服务商不支持大 max_tokens 时的回退）
+        fun buildBody(useAdvanced: Boolean): JSONObject {
+            val b = JSONObject()
+                .put("model", model)
+                .put("messages", arr)
+                .put("temperature", 0.3)
+                .put("stream", false)
+                .put(
+                    "max_tokens",
+                    if (useAdvanced) maxTokens else minOf(maxTokens, FALLBACK_OUTPUT_TOKENS),
+                )
+            if (forceJson) b.put("response_format", JSONObject().put("type", "json_object"))
+            if (useAdvanced && settings.thinkingDepth.isNotBlank()) b.put("reasoning_effort", settings.thinkingDepth)
+            return b
+        }
+
+        fun send(useAdvanced: Boolean): okhttp3.Response {
+            val req = Request.Builder()
+                .url("$base/chat/completions")
+                .header("Authorization", "Bearer ${settings.apiKey}")
+                .post(buildBody(useAdvanced).toString().toRequestBody("application/json".toMediaType()))
+                .build()
+            return try {
+                client.newCall(req).execute()
+            } catch (e: Exception) {
+                throw LlmException("无法连接 AI 服务（$base）：${e.message ?: e}")
+            }
+        }
+
+        var resp = send(true)
+        if (resp.code == 400) {
+            val detail = resp.use { r ->
+                val t = r.body?.string() ?: ""
+                (try { JSONObject(t).optJSONObject("error")?.optString("message") } catch (e: Exception) { t.take(200) }) ?: t.take(200)
+            }
+            if (Regex("max_tokens|reasoning|unsupported|invalid.*parameter", RegexOption.IGNORE_CASE).containsMatchIn(detail)) {
+                resp = send(false) // 服务商不支持大预算/思考深度 → 自动降级重试
+            } else {
+                throw LlmException("AI 服务返回错误 400：$detail")
+            }
         }
         resp.use { r ->
             val text = r.body?.string() ?: ""

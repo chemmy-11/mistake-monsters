@@ -75,6 +75,8 @@ data class AiSettings(
     val apiKey: String = "",
     val visionModel: String = "deepseek-flash",
     val textModel: String = "deepseek-flash",
+    // 思考深度（推理模型的 reasoning_effort）：low / medium / high；空串 = 不指定（兼容不支持的服务商）
+    val thinkingDepth: String = "high",
     val mock: Boolean = false,
 )
 

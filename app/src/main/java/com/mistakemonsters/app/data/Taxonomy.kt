@@ -49,4 +49,14 @@ object Taxonomy {
         AiPreset("siliconflow", "硅基流动 SiliconFlow", "https://api.siliconflow.cn/v1", "Qwen/Qwen2.5-VL-7B-Instruct", "deepseek-ai/DeepSeek-V3"),
         AiPreset("moonshot", "月之暗面 Kimi", "https://api.moonshot.cn/v1", "moonshot-v1-8k-vision-preview", "moonshot-v1-8k"),
     )
+
+    // 思考深度（推理模型的 reasoning_effort）；空 id = 不指定，兼容不支持该参数的服务商
+    data class ThinkingDepth(val id: String, val name: String)
+
+    val THINKING_DEPTHS = listOf(
+        ThinkingDepth("low", "低（更快、更省）"),
+        ThinkingDepth("medium", "中"),
+        ThinkingDepth("high", "高（推理更充分，推荐）"),
+        ThinkingDepth("", "不指定（兼容不支持的服务商）"),
+    )
 }
