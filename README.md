@@ -35,7 +35,7 @@ app/build/outputs/apk/debug/app-debug.apk
 
 **发布签名**：正式包读取 `keystore/keystore.properties` 指向的密钥库（已 gitignore，请自行备份——密钥丢失将无法覆盖安装）；文件缺失时自动回退 debug 签名。
 
-首次启动 → 「设置」→ 选择服务商（默认**智谱 GLM**，可换阿里百炼/OpenAI/硅基流动/Kimi/DeepSeek）→ 填 API Key → 测试连接。视觉模型与文本模型分开配置，任何 OpenAI 兼容接口均可。
+首次启动 → 「设置」→ 选择服务商（默认 **DeepSeek**，视觉/文本模型均为 `deepseek-flash`，可换智谱 GLM/阿里百炼/OpenAI/硅基流动/Kimi）→ 填 API Key → 测试连接。视觉模型与文本模型分开配置，任何 OpenAI 兼容接口均可。
 
 ## 🧱 技术要点
 
